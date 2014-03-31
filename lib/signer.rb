@@ -42,7 +42,7 @@ class Signer
 
   # <SignedInfo>
   #   <CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
-  #   <SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>
+  #   <SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
   #   ...
   # </SignedInfo>
   def signed_info_node
@@ -54,7 +54,7 @@ class Signer
       canonicalization_method_node['Algorithm'] = 'http://www.w3.org/2001/10/xml-exc-c14n#'
       node.add_child(canonicalization_method_node)
       signature_method_node = Nokogiri::XML::Node.new('SignatureMethod', document)
-      signature_method_node['Algorithm'] = 'http://www.w3.org/2000/09/xmldsig#rsa-sha1'
+      signature_method_node['Algorithm'] = 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256'
       node.add_child(signature_method_node)
     end
     node
@@ -131,14 +131,14 @@ class Signer
   #   <Transforms>
   #     <Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
   #   </Transforms>
-  #   <DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>
+  #   <DigestMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
   #   <DigestValue>aeqXriJuUCk4tPNPAGDXGqHj6ao=</DigestValue>
   # </Reference>
   def digest!(target_node, options = {})
     id = options[:id] || "_#{Digest::SHA1.hexdigest(target_node.to_s)}"
     target_node['u:Id'] = id if id.size > 0
     target_canon = canonicalize(target_node)
-    target_digest = Base64.encode64(OpenSSL::Digest::SHA1.digest(target_canon)).strip
+    target_digest = Base64.encode64(OpenSSL::Digest::SHA256.digest(target_canon)).strip
 
     reference_node = Nokogiri::XML::Node.new('Reference', document)
     reference_node['URI'] = id.size > 0 ? "##{id}" : ""
@@ -156,7 +156,7 @@ class Signer
     transforms_node.add_child(transform_node)
 
     digest_method_node = Nokogiri::XML::Node.new('DigestMethod', document)
-    digest_method_node['Algorithm'] = 'http://www.w3.org/2000/09/xmldsig#sha1'
+    digest_method_node['Algorithm'] = 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256'
     reference_node.add_child(digest_method_node)
 
     digest_value_node = Nokogiri::XML::Node.new('DigestValue', document)
