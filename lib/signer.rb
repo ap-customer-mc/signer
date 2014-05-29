@@ -37,7 +37,6 @@ class Signer
       node = Nokogiri::XML::Node.new('Signature', document)
       node.default_namespace = 'http://www.w3.org/2000/09/xmldsig#'
       security_node.add_child(node)
-      #security_node.children.first.add_next_sibling(node)
     end
     node
   end
@@ -82,10 +81,8 @@ class Signer
       node['EncodingType'] = 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary'
       node.content = Base64.encode64(cert.to_der).gsub("\n", '')
       node.namespace = security_node.namespace
-      #node.content = cert.to_der.gsub("\n", '')
       signature_node.add_previous_sibling(node)
       self.digest!(node, {:id => node.attributes["Id"].value})
-      #security_node.children.first.add_previous_sibling(node)
       key_info_node = Nokogiri::XML::Node.new('KeyInfo', document)
       security_token_reference_node = Nokogiri::XML::Node.new('wsse:SecurityTokenReference', document)
       key_info_node.add_child(security_token_reference_node)
@@ -141,17 +138,12 @@ class Signer
   #   <DigestValue>aeqXriJuUCk4tPNPAGDXGqHj6ao=</DigestValue>
   # </Reference>
   def digest!(target_node, options = {})
-    p "printing target node"
-    p options
+
     id = options[:id] || "id-#{OpenSSL::Digest::SHA256.hexdigest(target_node.to_s)}"
     target_node['wsu:Id'] = id if id.size > 0
-    p "this is target node"
-    p target_node
+
     target_canon = canonicalize(target_node)
-    p target_canon
     target_digest = Base64.encode64(OpenSSL::Digest::SHA256.digest(target_canon)).strip
-    #target_digest = OpenSSL::Digest::SHA256.digest(target_canon).strip
-    p target_digest
     reference_node = Nokogiri::XML::Node.new('Reference', document)
     reference_node['URI'] = id.size > 0 ? "##{id}" : ""
     signed_info_node.add_child(reference_node)
@@ -188,11 +180,8 @@ class Signer
     end
 
     signed_info_canon = canonicalize(signed_info_node)
-    p "this is the signed info canon"
-    p signed_info_canon
     signature = private_key.sign(OpenSSL::Digest::SHA256.new, signed_info_canon)
     signature_value_digest = Base64.encode64(signature).gsub("\n", '')
-    #signature_value_digest = signature
     signature_value_node = Nokogiri::XML::Node.new('SignatureValue', document)
     signature_value_node.content = signature_value_digest
     signed_info_node.add_next_sibling(signature_value_node)
