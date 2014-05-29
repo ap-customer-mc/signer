@@ -1,6 +1,5 @@
 require "nokogiri"
 require "base64"
-require "digest/sha1"
 require "openssl"
 
 require "signer/version"
@@ -18,15 +17,17 @@ class Signer
   end
 
   def security_token_id
-    @security_token_id ||= "uuid-639b8970-7644-4f9e-9bc4-9c2e367808fc-1"
+    @security_token_id ||= "X509-FD1F42445B399D6940140128428460283"
+    #@security_token_id ||= "uuid-639b8970-7644-4f9e-9bc4-9c2e367808fc-1"
   end
 
   def security_node
-    @security_node ||= document.xpath("//o:Security", "o" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd").first
+    @security_node ||= document.xpath("//wsse:Security", "wsse" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd").first
+
   end
 
   def canonicalize(node = document)
-    node.canonicalize(Nokogiri::XML::XML_C14N_EXCLUSIVE_1_0)
+    node.canonicalize(Nokogiri::XML::XML_C14N_EXCLUSIVE_1_0,inclusive_namespaces=nil,with_comments=false)
   end
 
   # <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
@@ -36,6 +37,7 @@ class Signer
       node = Nokogiri::XML::Node.new('Signature', document)
       node.default_namespace = 'http://www.w3.org/2000/09/xmldsig#'
       security_node.add_child(node)
+      #security_node.children.first.add_next_sibling(node)
     end
     node
   end
@@ -72,18 +74,22 @@ class Signer
   #   </o:SecurityTokenReference>
   # </KeyInfo>
   def binary_security_token_node
-    node = document.xpath("//o:BinarySecurityToken", "o" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd").first
+    node = document.xpath("//wsse:BinarySecurityToken", "wsse" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd").first
     unless node
       node = Nokogiri::XML::Node.new('BinarySecurityToken', document)
-      node['u:Id']         = security_token_id
+      node['wsu:Id']         = security_token_id
       node['ValueType']    = 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-x509-token-profile-1.0#X509v3'
       node['EncodingType'] = 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary'
       node.content = Base64.encode64(cert.to_der).gsub("\n", '')
+      node.namespace = security_node.namespace
+      #node.content = cert.to_der.gsub("\n", '')
       signature_node.add_previous_sibling(node)
+      self.digest!(node, {:id => node.attributes["Id"].value})
+      #security_node.children.first.add_previous_sibling(node)
       key_info_node = Nokogiri::XML::Node.new('KeyInfo', document)
-      security_token_reference_node = Nokogiri::XML::Node.new('o:SecurityTokenReference', document)
+      security_token_reference_node = Nokogiri::XML::Node.new('wsse:SecurityTokenReference', document)
       key_info_node.add_child(security_token_reference_node)
-      reference_node = Nokogiri::XML::Node.new('o:Reference', document)
+      reference_node = Nokogiri::XML::Node.new('wsse:Reference', document)
       reference_node['ValueType'] = 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-x509-token-profile-1.0#X509v3'
       reference_node['URI'] = "##{security_token_id}"
       security_token_reference_node.add_child(reference_node)
@@ -135,11 +141,17 @@ class Signer
   #   <DigestValue>aeqXriJuUCk4tPNPAGDXGqHj6ao=</DigestValue>
   # </Reference>
   def digest!(target_node, options = {})
-    id = options[:id] || "_#{Digest::SHA1.hexdigest(target_node.to_s)}"
-    target_node['u:Id'] = id if id.size > 0
+    p "printing target node"
+    p options
+    id = options[:id] || "id-#{OpenSSL::Digest::SHA256.hexdigest(target_node.to_s)}"
+    target_node['wsu:Id'] = id if id.size > 0
+    p "this is target node"
+    p target_node
     target_canon = canonicalize(target_node)
+    p target_canon
     target_digest = Base64.encode64(OpenSSL::Digest::SHA256.digest(target_canon)).strip
-
+    #target_digest = OpenSSL::Digest::SHA256.digest(target_canon).strip
+    p target_digest
     reference_node = Nokogiri::XML::Node.new('Reference', document)
     reference_node['URI'] = id.size > 0 ? "##{id}" : ""
     signed_info_node.add_child(reference_node)
@@ -156,7 +168,7 @@ class Signer
     transforms_node.add_child(transform_node)
 
     digest_method_node = Nokogiri::XML::Node.new('DigestMethod', document)
-    digest_method_node['Algorithm'] = 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256'
+    digest_method_node['Algorithm'] = 'http://www.w3.org/2001/04/xmlenc#sha256'
     reference_node.add_child(digest_method_node)
 
     digest_value_node = Nokogiri::XML::Node.new('DigestValue', document)
@@ -176,10 +188,11 @@ class Signer
     end
 
     signed_info_canon = canonicalize(signed_info_node)
-
-    signature = private_key.sign(OpenSSL::Digest::SHA1.new, signed_info_canon)
+    p "this is the signed info canon"
+    p signed_info_canon
+    signature = private_key.sign(OpenSSL::Digest::SHA256.new, signed_info_canon)
     signature_value_digest = Base64.encode64(signature).gsub("\n", '')
-
+    #signature_value_digest = signature
     signature_value_node = Nokogiri::XML::Node.new('SignatureValue', document)
     signature_value_node.content = signature_value_digest
     signed_info_node.add_next_sibling(signature_value_node)
